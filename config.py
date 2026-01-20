@@ -12,9 +12,11 @@ def _get_streamlit_secrets():
     """Try to get secrets from Streamlit if available."""
     try:
         import streamlit as st
-        if hasattr(st, 'secrets'):
+        # Streamlit secrets'a erişim
+        if hasattr(st, 'secrets') and st.secrets:
             return st.secrets
-    except (ImportError, AttributeError):
+    except (ImportError, AttributeError, RuntimeError):
+        # RuntimeError: Streamlit context dışında çalışıyorsa
         pass
     return None
 
@@ -46,14 +48,55 @@ class Settings(BaseSettings):
             return None
         
         try:
+            # Streamlit secrets'a erişim - önce dict-style, sonra attribute-style
+            def get_value(key, default=""):
+                """Secrets'tan değer al"""
+                # Dict-style
+                try:
+                    if key in secrets:
+                        val = secrets[key]
+                        return str(val).strip() if val else default
+                except (KeyError, TypeError, AttributeError):
+                    pass
+                
+                # Attribute-style
+                try:
+                    val = getattr(secrets, key, default)
+                    return str(val).strip() if val else default
+                except (AttributeError, TypeError):
+                    pass
+                
+                return default
+            
+            google_api_key = get_value("GOOGLE_API_KEY", "")
+            google_cse_id = get_value("GOOGLE_CSE_ID", "")
+            
+            # Zorunlu alanlar kontrolü
+            if not google_api_key or not google_cse_id:
+                return None
+            
+            # Opsiyonel alanlar
+            gemini_key = get_value("GOOGLE_GEMINI_API_KEY", "") or None
+            host = get_value("HOST", "0.0.0.0") or "0.0.0.0"
+            try:
+                port = int(get_value("PORT", "8000") or 8000)
+            except (ValueError, TypeError):
+                port = 8000
+            
             return cls(
-                google_api_key=secrets.get("GOOGLE_API_KEY", ""),
-                google_cse_id=secrets.get("GOOGLE_CSE_ID", ""),
-                google_gemini_api_key=secrets.get("GOOGLE_GEMINI_API_KEY"),
-                host=secrets.get("HOST", "0.0.0.0"),
-                port=int(secrets.get("PORT", 8000))
+                google_api_key=google_api_key,
+                google_cse_id=google_cse_id,
+                google_gemini_api_key=gemini_key,
+                host=host,
+                port=port
             )
-        except Exception:
+        except Exception as e:
+            # Debug için exception'ı logla
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Streamlit secrets yüklenirken hata: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
             return None
 
 
