@@ -8,8 +8,8 @@ Given a product name and marketplace name (e.g., "Canon Powershot G7X Mark III" 
 1. Searches Google using the official Google Custom Search API to find product links (NO scraping for search)
 2. Retrieves search results as JSON
 3. Extracts price information from marketplace pages using:
-   - **Selenium** for Hepsiburada (JavaScript rendering required)
-   - **BeautifulSoup/httpx** for other marketplaces (Trendyol, Teknosa, Amazon)
+   - **Selenium** 
+   - **BeautifulSoup/httpx** 
 4. Returns price data or redirects to product URL
 
 ## 🏗️ Architecture
