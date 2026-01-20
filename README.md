@@ -1,23 +1,27 @@
-# Google Search Redirect API
+# Marketplace Price Tracker
 
-A clean, production-safe mini project that uses the official Google Custom Search API to search for products on marketplaces and redirects users to the top organic result.
+A production-ready tool that searches for products on marketplaces and extracts price information. Uses Google Custom Search API to find product links, then scrapes prices from marketplace pages.
 
 ## 🎯 Goal
 
 Given a product name and marketplace name (e.g., "Canon Powershot G7X Mark III" + "Trendyol"), the system:
-1. Searches Google using the official Google Custom Search API (NO scraping, NO Selenium)
+1. Searches Google using the official Google Custom Search API to find product links (NO scraping for search)
 2. Retrieves search results as JSON
-3. Automatically takes the top organic result
-4. Redirects the user to that URL via HTTP 302 redirect
+3. Extracts price information from marketplace pages using:
+   - **Selenium** for Hepsiburada (JavaScript rendering required)
+   - **BeautifulSoup/httpx** for other marketplaces (Trendyol, Teknosa, Amazon)
+4. Returns price data or redirects to product URL
 
 ## 🏗️ Architecture
 
 ### Tech Stack
 - **Backend**: Python 3.8+ with FastAPI
-- **API**: Google Custom Search API (official, no scraping)
+- **Search API**: Google Custom Search API (official, for finding product links)
+- **Price Extraction**: 
+  - Selenium 
+  - BeautifulSoup + httpx 
 - **HTTP Client**: httpx (async HTTP library)
 - **Configuration**: pydantic-settings (type-safe config management)
-
 ### Project Structure
 ```
 webscrap/
@@ -228,7 +232,7 @@ Simple HTML frontend for testing the API interactively.
 1. **Compliance & Legal**: Official API eliminates legal concerns associated with web scraping
 2. **Reliability**: Google's API is stable, well-documented, and maintained
 3. **Rate Limits**: Transparent quota management (100 free queries/day, then paid)
-4. **No Browser Automation**: No Selenium/Playwright overhead = faster, more efficient
+4. **Efficient Link Discovery**: Google API finds product links quickly, then we extract prices using appropriate tools (Selenium for JS-heavy sites, BeautifulSoup for static content)
 5. **Structured Data**: Returns clean JSON, easier to parse than HTML scraping
 
 ### How This Differs from Marketplace Internal Search
