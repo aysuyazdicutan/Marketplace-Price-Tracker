@@ -1,0 +1,146 @@
+"""
+Streamlit Web Arayüzü - Fiyat Karşılaştırma Aracı
+Non-technical kullanıcılar için basit ve kullanıcı dostu arayüz
+"""
+import streamlit as st
+import asyncio
+import os
+import tempfile
+from pathlib import Path
+import pandas as pd
+from process_excel import process_excel_file, save_results_to_excel
+
+# Sayfa yapılandırması
+st.set_page_config(
+    page_title="Fiyat Karşılaştırma Aracı",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Başlık
+st.title("📊 Fiyat Karşılaştırma Aracı")
+st.markdown("Excel dosyanızı yükleyin ve marketplace'lerde fiyat karşılaştırması yapın.")
+
+# Sidebar - Ayarlar
+with st.sidebar:
+    st.header("⚙️ Ayarlar")
+    
+    marketplace_options = {
+        "Tüm Marketplace'ler": None,
+        "Hepsiburada": "Hepsiburada",
+        "Teknosa": "Teknosa",
+        "Trendyol": "Trendyol",
+        "Amazon": "Amazon"
+    }
+    
+    selected_marketplace = st.selectbox(
+        "Marketplace Seçin:",
+        options=list(marketplace_options.keys()),
+        index=0
+    )
+    
+    marketplace_value = marketplace_options[selected_marketplace]
+    
+    st.markdown("---")
+    st.markdown("### 📝 Kullanım Kılavuzu")
+    st.markdown("""
+    1. Excel dosyanızı yükleyin
+    2. Marketplace seçin
+    3. "Başlat" butonuna tıklayın
+    4. İşlem tamamlandığında sonuçları indirin
+    """)
+
+# Ana içerik
+uploaded_file = st.file_uploader(
+    "📁 Excel Dosyası Seçin",
+    type=['xlsx', 'xls'],
+    help="Ürün listesi içeren Excel dosyasını yükleyin"
+)
+
+if uploaded_file is not None:
+    # Dosyayı geçici olarak kaydet
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
+        tmp_file.write(uploaded_file.getvalue())
+        tmp_path = tmp_file.name
+    
+    try:
+        # Excel dosyasını kontrol et
+        df = pd.read_excel(tmp_path, engine='openpyxl')
+        st.success(f"✅ Dosya yüklendi: {len(df)} satır bulundu")
+        
+        # İlk birkaç satırı göster
+        with st.expander("📋 Excel Dosyası Önizleme (İlk 5 satır)"):
+            st.dataframe(df.head(), use_container_width=True)
+        
+        # Başlat butonu
+        if st.button("🚀 İşlemi Başlat", type="primary", use_container_width=True):
+            if marketplace_value is None:
+                st.info("🔄 Tüm marketplace'ler için işlem başlatılıyor...")
+            else:
+                st.info(f"🔄 {marketplace_value} için işlem başlatılıyor...")
+            
+            # Progress bar
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            try:
+                # Async fonksiyonu çalıştır
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                status_text.text("⏳ İşlem devam ediyor... Lütfen bekleyin.")
+                progress_bar.progress(20)
+                
+                # Excel dosyasını işle
+                results = loop.run_until_complete(
+                    process_excel_file(tmp_path, marketplace_value)
+                )
+                
+                progress_bar.progress(80)
+                status_text.text("💾 Sonuçlar kaydediliyor...")
+                
+                # Sonuçları kaydet
+                output_file = "results.xlsx"
+                save_results_to_excel(results, output_file)
+                
+                progress_bar.progress(100)
+                status_text.text("✅ İşlem tamamlandı!")
+                
+                # Sonuçları göster
+                st.success(f"✅ {len(results)} ürün işlendi!")
+                
+                # Sonuçları DataFrame olarak göster
+                if results:
+                    results_df = pd.DataFrame(results)
+                    st.dataframe(results_df, use_container_width=True)
+                    
+                    # İndirme butonu
+                    with open(output_file, 'rb') as f:
+                        st.download_button(
+                            label="📥 Sonuçları İndir (Excel)",
+                            data=f.read(),
+                            file_name=output_file,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                
+            except Exception as e:
+                st.error(f"❌ Hata: {str(e)}")
+                st.exception(e)
+            finally:
+                loop.close()
+    
+    except Exception as e:
+        st.error(f"❌ Dosya okunamadı: {str(e)}")
+    
+    finally:
+        # Geçici dosyayı temizle
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+else:
+    st.info("👆 Lütfen bir Excel dosyası yükleyin")
+
+# Footer
+st.markdown("---")
+st.markdown("💡 **İpucu:** Excel dosyanızın ilk sütununda ürün isimleri olmalıdır.")

@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Results
+results.xlsx
+*.xlsx
+~$*.xlsx
+
+# Streamlit
+.streamlit/
+.streamlit/secrets.toml
+
+
+
+
+# Test files
+test_*.py
+*_test.py
+*_debug.py
+
+# Documentation/Guide files
+GITHUB_*.md
+GIZLI_VERILER.md
+KULLANIM_KILAVUZU.md
+
+test_*.py
+*_test.py
+*_debug.py
+GITHUB_*.md
+GIZLI_VERILER.md
+KULLANIM_KILAVUZU.md
