@@ -113,11 +113,26 @@ def load_settings():
 
 
 # Global settings instance
+# ⚡ Streamlit ortamında sys.exit() yapma - uygulama başlamadan ölmesin
 try:
     settings = load_settings()
-except FileNotFoundError:
-    # Script çalıştırılıyorsa hata mesajı gösterilir
-    # Ancak settings'i None olarak bırakmayalım, yoksa import hataları olur
+except FileNotFoundError as e:
     import sys
-    sys.exit(1)
+    # Streamlit ortamında ise None döndür, yoksa sys.exit()
+    if 'streamlit' in sys.modules:
+        # Streamlit ortamında - None olarak bırak, streamlit_app.py kontrol edecek
+        settings = None
+    else:
+        # Normal script çalıştırılıyorsa hata ver
+        print("=" * 60)
+        print("⚠️  HATA: .env dosyası veya Streamlit secrets bulunamadı!")
+        print("=" * 60)
+        sys.exit(1)
+except Exception as e:
+    import sys
+    # Diğer hatalar için de aynı mantık
+    if 'streamlit' in sys.modules:
+        settings = None
+    else:
+        raise
 

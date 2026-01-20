@@ -8,9 +8,8 @@ import os
 import tempfile
 from pathlib import Path
 import pandas as pd
-from process_excel import process_excel_file, save_results_to_excel
 
-# Sayfa yapılandırması
+# ⚡ KRİTİK: UI'ı hemen render et (health check için)
 st.set_page_config(
     page_title="Fiyat Karşılaştırma Aracı",
     page_icon="📊",
@@ -18,9 +17,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Başlık
-st.title("📊 Fiyat Karşılaştırma Aracı")
+# Başlık - hemen render olmalı
+st.title("📊 Fiyat Karşılaştırma Aracı 🟢")
 st.markdown("Excel dosyanızı yükleyin ve marketplace'lerde fiyat karşılaştırması yapın.")
+
+# ⚡ LAZY IMPORT: Ağır modülleri sadece gerektiğinde yükle
+# process_excel import'u butona tıklandığında yapılacak
 
 # Sidebar - Ayarlar
 with st.sidebar:
@@ -75,6 +77,37 @@ if uploaded_file is not None:
         
         # Başlat butonu
         if st.button("🚀 İşlemi Başlat", type="primary", use_container_width=True):
+            # ⚡ LAZY IMPORT: Sadece butona tıklandığında yükle
+            try:
+                from process_excel import process_excel_file, save_results_to_excel
+                from config import settings
+                
+                # Settings kontrolü
+                if settings is None:
+                    st.error("⚠️ **API Key'leri Yapılandırılmamış!**")
+                    st.markdown("""
+                    ### Streamlit Cloud Secrets Yapılandırması Gerekli
+                    
+                    Lütfen Streamlit Cloud'da **Settings > Secrets** bölümüne gidin ve şu bilgileri ekleyin:
+                    
+                    ```toml
+                    GOOGLE_API_KEY = "your_google_api_key_here"
+                    GOOGLE_CSE_ID = "your_custom_search_engine_id_here"
+                    GOOGLE_GEMINI_API_KEY = "your_gemini_api_key_here"  # Opsiyonel
+                    ```
+                    
+                    Daha fazla bilgi için README.md dosyasına bakın.
+                    """)
+                    st.stop()
+                    
+            except ImportError as e:
+                st.error(f"❌ Modül yüklenemedi: {str(e)}")
+                st.stop()
+            except Exception as e:
+                st.error(f"❌ Beklenmeyen hata: {str(e)}")
+                st.exception(e)
+                st.stop()
+            
             if marketplace_value is None:
                 st.info("🔄 Tüm marketplace'ler için işlem başlatılıyor...")
             else:
