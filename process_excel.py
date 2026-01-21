@@ -3213,8 +3213,12 @@ async def search_product(product_name: str, marketplace: str, mm_price: float = 
             }
             
     except httpx.HTTPStatusError as e:
-        error_msg = f"Google API error: {e.response.status_code}"
-        logger.error(f"❌ {error_msg} - Ürün: {product_name}")
+        detail = ""
+        try:
+            detail = e.response.text  # Google genelde JSON error döner
+        except Exception:
+            detail = "<no response text>"
+        logger.error(f"❌ Google API error: {e.response.status_code} - Ürün: {product_name} - Detay: {detail[:800]}")
         return {
             "product_name": product_name,
             "marketplace": marketplace,
@@ -3222,7 +3226,7 @@ async def search_product(product_name: str, marketplace: str, mm_price: float = 
             "price": None,
             "currency": None,
             "success": False,
-            "error": error_msg
+            "error": f"Google API error: {e.response.status_code}"
         }
     except Exception as e:
         error_msg = f"Unexpected error: {str(e)}"
