@@ -10,7 +10,10 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-
+import streamlit as st
+st.write("DEBUG secrets keys:", list(st.secrets.keys()))
+st.write("DEBUG GOOGLE_API_KEY head:", str(st.secrets.get("GOOGLE_API_KEY", ""))[:12])
+st.write("DEBUG GOOGLE_CSE_ID:", str(st.secrets.get("GOOGLE_CSE_ID", ""))[:6])
 
 # ⚡ KRİTİK: UI'ı hemen render et (health check için)
 st.set_page_config(
