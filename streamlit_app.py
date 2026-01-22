@@ -8,13 +8,13 @@ import os
 import tempfile
 from pathlib import Path
 import pandas as pd
+
+import config
 import streamlit as st
 
-import streamlit as st
-st.write("DEBUG secrets keys:", list(st.secrets.keys()))
-st.write("DEBUG GOOGLE_API_KEY head:", str(st.secrets.get("GOOGLE_API_KEY", ""))[:12])
-st.write("DEBUG GOOGLE_CSE_ID:", str(st.secrets.get("GOOGLE_CSE_ID", ""))[:6])
-
+st.write("CONFIG FILE:", config.__file__)
+st.write("CONFIG settings head:", (config.settings.google_api_key[:12] if config.settings else None))
+st.write("secrets head:", str(st.secrets.get("GOOGLE_API_KEY",""))[:12])
 # ⚡ KRİTİK: UI'ı hemen render et (health check için)
 st.set_page_config(
     page_title="Fiyat Karşılaştırma Aracı",
