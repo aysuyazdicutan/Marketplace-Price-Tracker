@@ -12,10 +12,9 @@ import pandas as pd
 import config
 from config import Settings
 import streamlit as st
-
-s = Settings.from_streamlit_secrets()
-st.write("from_streamlit_secrets head:", s.google_api_key[:12] if s else None)
-st.write("from_streamlit_secrets cse:", s.google_cse_id if s else None)
+import config, streamlit as st
+st.write("CONFIG settings head NOW:", config.settings.google_api_key[:12] if config.settings else None)
+st.write("CONFIG settings cse NOW:", config.settings.google_cse_id if config.settings else None)
 # ⚡ KRİTİK: UI'ı hemen render et (health check için)
 st.set_page_config(
     page_title="Fiyat Karşılaştırma Aracı",
