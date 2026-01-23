@@ -1,7 +1,12 @@
 chromium
+chromium-browser
 chromium-driver
+chromedriver
 libnss3
 libgbm-dev
 libasound2
 libcurl4-openssl-dev
 libssl-dev
+libxss1
+libappindicator3-1
+libgconf-2-4
