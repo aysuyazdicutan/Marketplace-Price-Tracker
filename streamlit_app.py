@@ -13,8 +13,7 @@ import config
 from config import Settings
 import streamlit as st
 import config, streamlit as st
-st.write("CONFIG settings head NOW:", config.settings.google_api_key[:12] if config.settings else None)
-st.write("CONFIG settings cse NOW:", config.settings.google_cse_id if config.settings else None)
+
 # ⚡ KRİTİK: UI'ı hemen render et (health check için)
 st.set_page_config(
     page_title="Fiyat Karşılaştırma Aracı",
