@@ -17,15 +17,6 @@ import config, streamlit as st
 import shutil
 import streamlit as st
 
-st.write("### 🛠️ Sistem Bağımlılık Kontrolü")
-check_packages = ["chromium", "chromedriver"]
-
-for pkg in check_packages:
-    path = shutil.which(pkg)
-    if path:
-        st.success(f"✅ {pkg} bulundu: {path}")
-    else:
-        st.error(f"❌ {pkg} SİSTEMDE BULUNAMADI!")
 # ⚡ KRİTİK: UI'ı hemen render et (health check için)
 st.set_page_config(
     page_title="Fiyat Karşılaştırma Aracı",
@@ -35,7 +26,7 @@ st.set_page_config(
 )
 
 # Başlık - hemen render olmalı
-st.title("📊 Fiyat Karşılaştırma Aracı 🟢")
+st.title("📊 Fiyat Karşılaştırma Aracı ")
 st.markdown("Excel dosyanızı yükleyin ve marketplace'lerde fiyat karşılaştırması yapın.")
 
 # ⚡ LAZY IMPORT: Ağır modülleri sadece gerektiğinde yükle
