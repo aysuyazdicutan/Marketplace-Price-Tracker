@@ -92,30 +92,8 @@ if uploaded_file is not None:
         with st.expander("📋 Excel Dosyası Önizleme (İlk 5 satır)"):
             st.dataframe(df.head(), width='stretch')
         
-        # Session state için stop flag'i başlat
-        if 'stop_flag' not in st.session_state:
-            st.session_state.stop_flag = None
-        if 'processing' not in st.session_state:
-            st.session_state.processing = False
-        
-        # Başlat ve Durdur butonları
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            start_button = st.button("🚀 İşlemi Başlat", type="primary", use_container_width=True, disabled=st.session_state.processing)
-        
-        with col2:
-            stop_button = st.button("⏹️ İşlemi Durdur", use_container_width=True, disabled=not st.session_state.processing)
-        
-        # Durdur butonuna tıklandığında
-        if stop_button and st.session_state.stop_flag:
-            st.session_state.stop_flag.set()
-            st.session_state.processing = False
-            st.warning("⏹️ İşlem durduruluyor...")
-            st.rerun()
-        
         # Başlat butonu
-        if start_button:
+        if st.button("🚀 İşlemi Başlat", type="primary", use_container_width=True):
             # ⚡ LAZY IMPORT: Sadece butona tıklandığında yükle
             try:
                 from process_excel import process_excel_file, save_results_to_excel
@@ -208,11 +186,6 @@ if uploaded_file is not None:
             else:
                 st.info(f"🔄 {marketplace_value} için işlem başlatılıyor...")
             
-            # Stop flag oluştur
-            stop_flag = asyncio.Event()
-            st.session_state.stop_flag = stop_flag
-            st.session_state.processing = True
-            
             # Progress bar
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -225,35 +198,25 @@ if uploaded_file is not None:
                 status_text.text("⏳ İşlem devam ediyor... Lütfen bekleyin.")
                 progress_bar.progress(20)
                 
-                # Excel dosyasını işle (stop_flag ile)
+                # Excel dosyasını işle (stop_flag olmadan - None geç)
                 results = loop.run_until_complete(
-                    process_excel_file(tmp_path, marketplace_value, stop_flag)
+                    process_excel_file(tmp_path, marketplace_value, None)
                 )
                 
-                # Stop flag kontrolü
-                if stop_flag.is_set():
-                    progress_bar.progress(0)
-                    status_text.text("⏹️ İşlem durduruldu!")
-                    st.warning("⏹️ İşlem kullanıcı tarafından durduruldu.")
-                    st.session_state.processing = False
-                    if results:
-                        st.info(f"⚠️ {len(results)} ürün işlendi (işlem yarıda kesildi)")
-                else:
-                    progress_bar.progress(80)
-                    status_text.text("💾 Sonuçlar kaydediliyor...")
-                    
-                    # Sonuçları kaydet
-                    output_file = "results.xlsx"
-                    save_results_to_excel(results, output_file)
-                    
-                    progress_bar.progress(100)
-                    status_text.text("✅ İşlem tamamlandı!")
-                    st.session_state.processing = False
-                    
-                    # Sonuçları göster
-                    st.success(f"✅ {len(results)} ürün işlendi!")
+                progress_bar.progress(80)
+                status_text.text("💾 Sonuçlar kaydediliyor...")
                 
-                # Sonuçları DataFrame olarak göster (varsa)
+                # Sonuçları kaydet
+                output_file = "results.xlsx"
+                save_results_to_excel(results, output_file)
+                
+                progress_bar.progress(100)
+                status_text.text("✅ İşlem tamamlandı!")
+                
+                # Sonuçları göster
+                st.success(f"✅ {len(results)} ürün işlendi!")
+                
+                # Sonuçları DataFrame olarak göster
                 if results:
                     results_df = pd.DataFrame(results)
                     
@@ -278,10 +241,8 @@ if uploaded_file is not None:
             except Exception as e:
                 st.error(f"❌ Hata: {str(e)}")
                 st.exception(e)
-                st.session_state.processing = False
             finally:
                 loop.close()
-                st.session_state.stop_flag = None
     
     except Exception as e:
         st.error(f"❌ Dosya okunamadı: {str(e)}")
