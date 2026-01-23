@@ -580,20 +580,36 @@ async def extract_price_from_hepsiburada(url: str, max_retries: int = 0) -> Dict
                     import random
                     from urllib.parse import quote
                     
-                    # Timeout'u çok azalt (5 saniye - ilk denemede başarısız olursa hemen geçsin)
-                    wait = WebDriverWait(driver, 5)
+                    # Streamlit Cloud algılama - timeout sürelerini ayarla
+                    is_streamlit = False
+                    try:
+                        import streamlit as st
+                        is_streamlit = True
+                    except:
+                        pass
+                    
+                    # Streamlit Cloud'ta daha uzun timeout (30 saniye), local'de 15 saniye
+                    wait_timeout = 30 if is_streamlit else 15
+                    wait = WebDriverWait(driver, wait_timeout)
+                    
+                    logger.info(f"Hepsiburada: Sayfa yükleniyor (timeout: {wait_timeout}s)...")
                     
                     # Sayfaya git
+                    driver.set_page_load_timeout(wait_timeout)
                     driver.get(url)
                     
-                    # Sayfanın yüklenmesini bekle (timeout çok kısa - hızlı geçiş için)
+                    # Sayfanın yüklenmesini bekle
                     try:
                         wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                    except:
-                        # Timeout olursa hemen geç
-                        return None, "Sayfa yüklenemedi (timeout)"
+                        logger.debug("Hepsiburada: Sayfa body elementi yüklendi")
+                    except Exception as e:
+                        logger.warning(f"Hepsiburada: Sayfa body elementi yüklenemedi: {e}")
+                        return None, f"Sayfa yüklenemedi (timeout: {wait_timeout}s)"
                     
-                    time.sleep(1)  # Bekleme süresini çok azalt (1 saniye)
+                    # Streamlit Cloud'ta daha uzun bekleme (JavaScript yüklenmesi için)
+                    sleep_time = 3 if is_streamlit else 2
+                    time.sleep(sleep_time)
+                    logger.debug(f"Hepsiburada: İlk bekleme tamamlandı ({sleep_time}s)")
                     
                     # Popup'ları kapat
                     try:
@@ -616,9 +632,12 @@ async def extract_price_from_hepsiburada(url: str, max_retries: int = 0) -> Dict
                     except:
                         pass
                     
-                    time.sleep(0.5)  # Beklemeyi azalt
+                    # Scroll ve ek bekleme
+                    scroll_wait = 1 if is_streamlit else 0.5
+                    time.sleep(scroll_wait)
                     driver.execute_script("window.scrollTo(0, 300);")
-                    time.sleep(0.5)  # Beklemeyi azalt
+                    time.sleep(scroll_wait)
+                    logger.debug("Hepsiburada: Scroll yapıldı, fiyat aranıyor...")
                     
                     # Fiyat geçerliliği kontrolü (kullanıcının kodundan)
                     def fiyat_gecerli_mi(text):
@@ -752,7 +771,13 @@ async def extract_price_from_hepsiburada(url: str, max_retries: int = 0) -> Dict
                     return None, "Fiyat bulunamadı"
                     
                 except Exception as e:
-                    return None, f"Hata: {str(e)[:50]}"
+                    error_msg = str(e)
+                    # Timeout hatalarını özel olarak yakala
+                    if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                        logger.warning(f"Hepsiburada: Timeout hatası: {error_msg[:100]}")
+                        return None, f"Sayfa yükleme timeout ({wait_timeout}s)"
+                    logger.warning(f"Hepsiburada: Selenium hatası: {error_msg[:100]}")
+                    return None, f"Hata: {error_msg[:50]}"
             
             # Selenium'u async executor'da çalıştır
             price, error = await loop.run_in_executor(None, selenium_extract)
