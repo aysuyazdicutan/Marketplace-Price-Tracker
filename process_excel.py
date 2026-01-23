@@ -1118,9 +1118,7 @@ async def extract_price_from_teknosa(url: str, max_retries: int = 3, proxy: Opti
                         request_kwargs = {
                             'url': url,
                             'timeout': int(timeout_duration),
-                            'impersonate': 'chrome110',  # Güncel bir browser taklidi
-                            # Referer olarak Google veya ana sayfayı göster
-                            'headers': {'Referer': 'https://www.google.com/'}
+                            'impersonate': 'chrome110'  # Güncel bir browser taklidi
                         }
                         
                         # Proxy varsa ekle
@@ -1178,6 +1176,10 @@ async def extract_price_from_teknosa(url: str, max_retries: int = 3, proxy: Opti
                 # Response'u kontrol et
                 if hasattr(response, 'status_code'):
                     if response.status_code == 403:
+                        # 403 hatası alındığında rastgele bekleme (5.0-10.0 saniye)
+                        wait_time = random.uniform(5.0, 10.0)
+                        logger.warning(f"Teknosa 403 verdi, {wait_time:.1f} sn bekleniyor (Deneme {attempt+1})")
+                        await asyncio.sleep(wait_time)
                         continue  # Tekrar dene
                     elif response.status_code != 200:
                         if attempt < max_retries:
@@ -2746,17 +2748,16 @@ async def search_product(product_name: str, marketplace: str, mm_price: float = 
         
         logger.debug(f"Aranıyor: '{product_name}' -> {marketplace}")
         
-        # Google Custom Search API maksimum 10 sonuç döndürebilir, ama sayfalama ile 15 sonuç alabiliriz
-        # İlk 10 sonuç için bir istek, sonraki 5 sonuç için ikinci istek
+        # Google Custom Search API - sadece en alakalı ilk 5 sonuç alınıyor
         all_items = []
         
         async with httpx.AsyncClient(timeout=10.0) as client:
-            # İlk 10 sonuç
+            # İlk 5 sonuç
             params1 = {
                 "key": settings.google_api_key,
                 "cx": settings.google_cse_id,
                 "q": search_query,
-                "num": 10,
+                "num": 5,
                 "start": 1
             }
             
@@ -2766,28 +2767,7 @@ async def search_product(product_name: str, marketplace: str, mm_price: float = 
             
             if "items" in data1 and len(data1["items"]) > 0:
                 all_items.extend(data1["items"])
-                logger.info(f"📊 İlk 10 sonuç alındı: {len(data1['items'])} sonuç")
-            
-            # Sonraki 5 sonuç (eğer ilk istekte 10 sonuç varsa)
-            if "items" in data1 and len(data1["items"]) == 10:
-                params2 = {
-                    "key": settings.google_api_key,
-                    "cx": settings.google_cse_id,
-                    "q": search_query,
-                    "num": 5,
-                    "start": 11
-                }
-                
-                try:
-                    response2 = await client.get(GOOGLE_SEARCH_URL, params=params2)
-                    response2.raise_for_status()
-                    data2 = response2.json()
-                    
-                    if "items" in data2 and len(data2["items"]) > 0:
-                        all_items.extend(data2["items"])
-                        logger.info(f"📊 Sonraki 5 sonuç alındı: {len(data2['items'])} sonuç")
-                except Exception as e:
-                    logger.debug(f"İkinci sayfa alınamadı (normal olabilir): {e}")
+                logger.info(f"📊 İlk 5 sonuç alındı: {len(data1['items'])} sonuç")
             
             # Tüm sonuçları birleştir
             data = {"items": all_items}
