@@ -4,3 +4,5 @@ libgbm-dev
 libasound2
 libcurl4-openssl-dev
 libssl-dev
+pkg-config
+build-essential
