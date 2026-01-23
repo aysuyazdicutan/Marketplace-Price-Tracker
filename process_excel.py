@@ -1095,14 +1095,13 @@ async def extract_price_from_teknosa(url: str, max_retries: int = 3, proxy: Opti
         'Referer': 'https://www.teknosa.com/',
     }
     
-    # Streamlit Cloud IP engellemesini aşmak için daha agresif ayarlar
+    # Streamlit IP engellemesini aşmak için daha uzun bekleme
     for attempt in range(max_retries + 1):
         try:
-            # Her denemede farklı bir süre bekle (1-4 saniye arası)
             if attempt > 0:
-                await asyncio.sleep(random.uniform(1.0, 4.0))
-            else:
-                await asyncio.sleep(random.uniform(0.3, 1.0))
+                wait_time = random.uniform(5.0, 10.0)  # Süreyi artırdık
+                logger.warning(f"Teknosa 403 verdi, {wait_time:.1f} sn bekleniyor (Deneme {attempt+1})")
+                await asyncio.sleep(wait_time)
             
             timeout_duration = 25.0 if attempt == max_retries else 15.0
             
@@ -1113,14 +1112,15 @@ async def extract_price_from_teknosa(url: str, max_retries: int = 3, proxy: Opti
                 
                 if USE_CURL_CFFI and curl_requests is not None:
                     # curl_cffi ile browser fingerprint simülasyonu
-                    # ÖNEMLİ: Headers'ı curl_cffi'nin kendisine bırakıyoruz (impersonate="chrome110")
-                    # Manuel header eklemek bazen parmak izi uyuşmazlığına (403) sebep olur.
+                    # ÖNEMLİ: Manuel headers kullanmıyoruz, curl_cffi hallediyor
                     try:
                         # Proxy desteği için altyapı hazırla
                         request_kwargs = {
                             'url': url,
                             'timeout': int(timeout_duration),
-                            'impersonate': 'chrome110'  # Güncel bir browser taklidi
+                            'impersonate': 'chrome110',  # Güncel bir browser taklidi
+                            # Referer olarak Google veya ana sayfayı göster
+                            'headers': {'Referer': 'https://www.google.com/'}
                         }
                         
                         # Proxy varsa ekle
@@ -1178,18 +1178,7 @@ async def extract_price_from_teknosa(url: str, max_retries: int = 3, proxy: Opti
                 # Response'u kontrol et
                 if hasattr(response, 'status_code'):
                     if response.status_code == 403:
-                        if attempt < max_retries:
-                            logger.warning(f"Teknosa hala 403 veriyor (Deneme {attempt+1}/{max_retries + 1})")
-                            # 403 hatası için daha uzun rastgele bekleme
-                            await asyncio.sleep(random.uniform(2.0, 5.0))
-                            continue
-                        else:
-                            return {
-                                'price': None,
-                                'currency': None,
-                                'success': False,
-                                'error': '403 Forbidden - Bot protection'
-                            }
+                        continue  # Tekrar dene
                     elif response.status_code != 200:
                         if attempt < max_retries:
                             logger.warning(f"HTTP {response.status_code} (deneme {attempt + 1}/{max_retries + 1}), tekrar denenecek...")
@@ -3578,7 +3567,7 @@ async def process_excel_file(excel_file: str, selected_marketplace: str = None):
     logger.info(f"{'='*60}\n")
     
     # Eşzamanlı istek sayısını sınırla (semaphore kullanarak)
-    semaphore = asyncio.Semaphore(2)  # Aynı anda maksimum 2 fiyat çekme işlemi
+    semaphore = asyncio.Semaphore(1)  # Aynı anda maksimum 1 fiyat çekme işlemi (bot koruması için)
     
     async def search_product_with_semaphore(product_name: str, marketplace: str, mm_price: float = None, ean: str = None):
         """Semaphore ile sınırlandırılmış arama"""
@@ -3660,8 +3649,8 @@ async def process_excel_file(excel_file: str, selected_marketplace: str = None):
             except Exception as e:
                 logger.error(f"❌ Ara kayıt hatası: {str(e)}")
         
-        # Her ürün arasında kısa bir bekleme
-        await asyncio.sleep(0.5)
+        # Her ürün arasında bekleme (Teknosa bot koruması için)
+        await asyncio.sleep(2.0)
     
     # Sonuçları özetle
     total_products = len(all_results)
