@@ -19,8 +19,13 @@ from typing import Optional
 import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 BASE_DIR = Path(__file__).resolve().parent
+
+from dotenv import load_dotenv
+load_dotenv(BASE_DIR / ".env", override=True) # override=True eski değerleri temizler
+
+
+
 
 
 def _get_streamlit_secrets():
