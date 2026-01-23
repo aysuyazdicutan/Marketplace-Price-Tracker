@@ -3675,7 +3675,7 @@ def is_price_valid(found_price: float, mm_price: float = None) -> bool:
     return is_valid
 
 
-async def process_excel_file(excel_file: str, selected_marketplace: str = None):
+async def process_excel_file(excel_file: str, selected_marketplace: str = None, stop_flag: asyncio.Event = None):
     """
     Excel dosyasındaki tüm ürünleri işler ve belirtilen marketplace için arama yapar.
     Eğer selected_marketplace None ise, tüm marketplace'ler için çalışır.
@@ -3683,9 +3683,10 @@ async def process_excel_file(excel_file: str, selected_marketplace: str = None):
     Args:
         excel_file: Excel dosya yolu
         selected_marketplace: Çalıştırılacak marketplace (None, "Teknosa", "Hepsiburada", "Trendyol", "Amazon")
+        stop_flag: İşlemi durdurmak için kullanılan asyncio.Event (opsiyonel)
     
     Returns:
-        Sonuçlar listesi (her ürün için bir dict: product_name, teknosa_fiyatı, hepsiburada_fiyatı, trendyol_fiyatı, amazon_fiyatı)
+        Sonuçlar listesi (her ürün için bir dict: product_name, mm_price, teknosa_fiyatı, hepsiburada_fiyatı, trendyol_fiyatı, amazon_fiyatı, fiyat_karşılaştırması)
     """
     # Ürünleri oku (artık dict listesi döndürüyor: product_name ve mm_price)
     products_data = read_excel_products(excel_file)
@@ -3705,10 +3706,12 @@ async def process_excel_file(excel_file: str, selected_marketplace: str = None):
                 product_name = row.get('ürün ismi', '')
                 if product_name:
                     existing_results[product_name] = {
+                        'MM Price': row.get('MM Price'),
                         'teknosa fiyatı': row.get('teknosa fiyatı'),
                         'hepsiburada fiyatı': row.get('hepsiburada fiyatı'),
                         'trendyol fiyatı': row.get('trendyol fiyatı'),
-                        'amazon fiyatı': row.get('amazon fiyatı')
+                        'amazon fiyatı': row.get('amazon fiyatı'),
+                        'fiyat_karşılaştırması': row.get('fiyat_karşılaştırması')
                     }
             logger.info(f"📂 Mevcut sonuçlar yüklendi: {len(existing_results)} ürün")
         except Exception as e:
@@ -3758,9 +3761,19 @@ async def process_excel_file(excel_file: str, selected_marketplace: str = None):
         
         logger.info(f"\n[{product_idx}/{len(products_data)}] {product_name}")
         
+        # Stop flag kontrolü
+        if stop_flag and stop_flag.is_set():
+            logger.info("⏹️ İşlem durduruldu!")
+            break
+        
         # Her ürün için sonuç dict'i oluştur - mevcut değerleri koru
+        # MM Price varsa kullan, yoksa mevcut sonuçlardan al
+        existing_mm_price = existing_results.get(product_name, {}).get('MM Price')
+        final_mm_price = mm_price if mm_price is not None else (existing_mm_price if existing_mm_price is not None else None)
+        
         product_result = {
             'ürün ismi': product_name,
+            'MM Price': final_mm_price,
             'teknosa fiyatı': existing_results.get(product_name, {}).get('teknosa fiyatı'),
             'hepsiburada fiyatı': existing_results.get(product_name, {}).get('hepsiburada fiyatı'),
             'trendyol fiyatı': existing_results.get(product_name, {}).get('trendyol fiyatı'),
@@ -3769,6 +3782,11 @@ async def process_excel_file(excel_file: str, selected_marketplace: str = None):
         
         # Her marketplace için arama yap (sadece seçilen marketplace'ler)
         for marketplace in marketplaces:
+            # Stop flag kontrolü
+            if stop_flag and stop_flag.is_set():
+                logger.info("⏹️ İşlem durduruldu!")
+                break
+            
             logger.debug(f"  🔍 {marketplace} aranıyor...")
             
             # Marketplace başlamadan önce kendi sütununu temizle
@@ -3784,8 +3802,10 @@ async def process_excel_file(excel_file: str, selected_marketplace: str = None):
             try:
                 result = await search_product_with_semaphore(product_name, marketplace, mm_price, ean)
                 
-                # Marketplace'e göre fiyatı ilgili sütuna yaz
+                # Marketplace'e göre fiyatı ilgili sütuna yaz (kuruşları kaldırmak için yuvarla)
                 price = result.get('price') if result.get('success') else None
+                if price is not None:
+                    price = round(price)  # Kuruşları kaldır
                 
                 if marketplace == "Teknosa":
                     product_result['teknosa fiyatı'] = price
@@ -3797,7 +3817,7 @@ async def process_excel_file(excel_file: str, selected_marketplace: str = None):
                     product_result['amazon fiyatı'] = price
                 
                 if price is not None:
-                    logger.info(f"  ✅ {marketplace}: {price:.2f} TRY")
+                    logger.info(f"  ✅ {marketplace}: {price} TRY")
                 else:
                     logger.warning(f"  ⚠️  {marketplace}: Fiyat bulunamadı")
                     
@@ -3805,8 +3825,37 @@ async def process_excel_file(excel_file: str, selected_marketplace: str = None):
                 logger.error(f"  ❌ {marketplace} hatası: {str(e)[:50]}")
                 # Hata durumunda mevcut değer korunur (yukarıda zaten yüklendi)
         
+        # MM Price ile en düşük marketplace fiyatını karşılaştır
+        marketplace_prices = [
+            product_result.get('teknosa fiyatı'),
+            product_result.get('hepsiburada fiyatı'),
+            product_result.get('trendyol fiyatı'),
+            product_result.get('amazon fiyatı')
+        ]
+        valid_prices = [p for p in marketplace_prices if p is not None and pd.notna(p)]
+        
+        comparison_text = None
+        current_mm_price = product_result.get('MM Price')
+        if current_mm_price is not None and current_mm_price > 0 and valid_prices:
+            min_price = min(valid_prices)
+            if min_price > 0:
+                diff_percent = ((current_mm_price - min_price) / min_price) * 100
+                if diff_percent > 0:
+                    comparison_text = f"+{diff_percent:.1f}%"
+                else:
+                    comparison_text = f"{diff_percent:.1f}%"
+        elif current_mm_price is not None and current_mm_price > 0:
+            comparison_text = "Fiyat bulunamadı"
+        
+        product_result['fiyat_karşılaştırması'] = comparison_text
+        
         # Ürün sonucunu ekle
         all_results.append(product_result)
+        
+        # Stop flag kontrolü
+        if stop_flag and stop_flag.is_set():
+            logger.info("⏹️ İşlem durduruldu!")
+            break
         
         # Her 5 üründe bir ara kayıt yap
         if product_idx % 5 == 0:
@@ -3861,17 +3910,21 @@ def save_results_to_excel(results: List[Dict], output_file: str = "results.xlsx"
     # Yeni sonuçları DataFrame'e çevir
     new_df = pd.DataFrame(results)
     
-    # Sütun sırasını düzenle
-    column_order = ['ürün ismi', 'teknosa fiyatı', 'hepsiburada fiyatı', 'trendyol fiyatı', 'amazon fiyatı']
+    # Sütun sırasını düzenle (MM Price ve fiyat_karşılaştırması dahil)
+    column_order = ['ürün ismi', 'MM Price', 'teknosa fiyatı', 'hepsiburada fiyatı', 'trendyol fiyatı', 'amazon fiyatı', 'fiyat_karşılaştırması']
     # Sadece mevcut sütunları al
     existing_columns = [col for col in column_order if col in new_df.columns]
-    new_df = new_df[existing_columns]
+    # Mevcut sütunlarda olmayan ama new_df'de olan sütunları da ekle
+    other_columns = [col for col in new_df.columns if col not in existing_columns]
+    new_df = new_df[existing_columns + other_columns]
     
-    # Fiyat sütunlarını sayısal formata çevir (None değerleri NaN olarak kalır)
-    price_columns = ['teknosa fiyatı', 'hepsiburada fiyatı', 'trendyol fiyatı', 'amazon fiyatı']
+    # Fiyat sütunlarını sayısal formata çevir ve kuruşları kaldır (None değerleri NaN olarak kalır)
+    price_columns = ['MM Price', 'teknosa fiyatı', 'hepsiburada fiyatı', 'trendyol fiyatı', 'amazon fiyatı']
     for col in price_columns:
         if col in new_df.columns:
             new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
+            # Kuruşları kaldır (tam sayıya yuvarla)
+            new_df[col] = new_df[col].apply(lambda x: round(x) if pd.notna(x) else x)
     
     # Mevcut dosya varsa, yeni sonuçlarla birleştir
     if existing_df is not None and 'ürün ismi' in existing_df.columns:
@@ -3890,11 +3943,18 @@ def save_results_to_excel(results: List[Dict], output_file: str = "results.xlsx"
             
             if len(existing_idx) > 0:
                 # Mevcut satırı güncelle - sadece None olmayan değerleri güncelle
-                for col in price_columns:
-                    if col in new_df.columns and col in merged_df.columns:
-                        new_value = new_row.get(col)
-                        if pd.notna(new_value):  # Yeni değer None değilse güncelle
-                            merged_df.at[existing_idx[0], col] = new_value
+                for col in price_columns + ['fiyat_karşılaştırması']:
+                    if col in new_df.columns:
+                        if col in merged_df.columns:
+                            new_value = new_row.get(col)
+                            if pd.notna(new_value):  # Yeni değer None değilse güncelle
+                                merged_df.at[existing_idx[0], col] = new_value
+                        else:
+                            # Yeni sütun ekle
+                            merged_df[col] = None
+                            new_value = new_row.get(col)
+                            if pd.notna(new_value):
+                                merged_df.at[existing_idx[0], col] = new_value
             else:
                 # Yeni satır ekle
                 merged_df = pd.concat([merged_df, new_row.to_frame().T], ignore_index=True)
@@ -3902,6 +3962,36 @@ def save_results_to_excel(results: List[Dict], output_file: str = "results.xlsx"
         df = merged_df
     else:
         df = new_df
+    
+    # Fiyat karşılaştırması sütununu hesapla (eğer yoksa veya eksikse)
+    if 'fiyat_karşılaştırması' not in df.columns:
+        df['fiyat_karşılaştırması'] = None
+    
+    # Her satır için karşılaştırma hesapla (eğer yoksa)
+    for idx, row in df.iterrows():
+        if pd.isna(row.get('fiyat_karşılaştırması')) or row.get('fiyat_karşılaştırması') is None:
+            mm_price = row.get('MM Price')
+            marketplace_prices = [
+                row.get('teknosa fiyatı'),
+                row.get('hepsiburada fiyatı'),
+                row.get('trendyol fiyatı'),
+                row.get('amazon fiyatı')
+            ]
+            valid_prices = [p for p in marketplace_prices if p is not None and pd.notna(p)]
+            
+            comparison_text = None
+            if mm_price is not None and pd.notna(mm_price) and mm_price > 0 and valid_prices:
+                min_price = min(valid_prices)
+                if min_price > 0:
+                    diff_percent = ((mm_price - min_price) / min_price) * 100
+                    if diff_percent > 0:
+                        comparison_text = f"+{diff_percent:.1f}%"
+                    else:
+                        comparison_text = f"{diff_percent:.1f}%"
+            elif mm_price is not None and pd.notna(mm_price) and mm_price > 0:
+                comparison_text = "Fiyat bulunamadı"
+            
+            df.at[idx, 'fiyat_karşılaştırması'] = comparison_text
     
     # Excel'e yazmadan önce özet bilgi
     total_prices = sum(df[col].notna().sum() for col in price_columns if col in df.columns)
