@@ -12,6 +12,7 @@ import os
 import json
 import re
 import random
+import platform
 from urllib.parse import quote, urlparse, parse_qs, unquote
 from bs4 import BeautifulSoup
 from difflib import SequenceMatcher
@@ -49,18 +50,96 @@ def get_selenium_driver():
     
     if _selenium_driver_pool is None and USE_SELENIUM:
         try:
+            # Streamlit Cloud ortamını algıla
+            is_streamlit_cloud = False
+            try:
+                import streamlit as st
+                # Streamlit Cloud'ta genellikle bu environment variable'lar var
+                is_streamlit_cloud = os.environ.get("STREAMLIT_SERVER_PORT") is not None or \
+                                    os.environ.get("STREAMLIT_SERVER_ADDRESS") is not None
+            except:
+                pass
+            
             chrome_options = Options()
-            chrome_options.binary_location = "/usr/bin/chromium"  # Linux ortamında Chromium binary yolu
-            chrome_options.add_argument("--headless")  # Arka planda çalış
+            
+            # Platforma göre Chrome binary path'ini ayarla
+            system = platform.system()
+            chrome_binary = None
+            
+            if system == "Darwin":  # macOS (local)
+                chrome_paths = [
+                    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+                ]
+                for path in chrome_paths:
+                    if os.path.exists(path):
+                        chrome_binary = path
+                        logger.debug(f"macOS: Chrome binary bulundu: {chrome_binary}")
+                        break
+            elif system == "Linux":  # Streamlit Cloud veya Linux
+                chrome_paths = [
+                    "/usr/bin/chromium",
+                    "/usr/bin/chromium-browser",
+                    "/usr/bin/google-chrome",
+                    "/usr/bin/chrome",
+                ]
+                for path in chrome_paths:
+                    if os.path.exists(path):
+                        chrome_binary = path
+                        logger.info(f"Linux: Chrome binary bulundu: {chrome_binary}")
+                        break
+                if not chrome_binary:
+                    logger.warning("Linux: Chrome binary bulunamadı, sistem PATH'inden bulunacak")
+            
+            if chrome_binary:
+                chrome_options.binary_location = chrome_binary
+            
+            chrome_options.add_argument("--headless")  # Streamlit için zorunlu
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-dev-shm-usage")
+            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--single-process")  # Streamlit Cloud için önemli
             chrome_options.add_argument("--disable-blink-features=AutomationControlled")
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option('useAutomationExtension', False)
             chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             
+            # Service ayarları - Streamlit Cloud için özel path'ler dene
+            service = None
+            if is_streamlit_cloud or system == "Linux":
+                # Streamlit Cloud'ta ChromeDriver path'leri
+                chromedriver_paths = [
+                    "/usr/bin/chromedriver",
+                    "/usr/lib/chromium-browser/chromedriver",
+                    "/usr/local/bin/chromedriver",
+                ]
+                
+                for driver_path in chromedriver_paths:
+                    if os.path.exists(driver_path):
+                        try:
+                            service = Service(driver_path)
+                            logger.info(f"Streamlit Cloud: ChromeDriver bulundu: {driver_path}")
+                            break
+                        except Exception as e:
+                            logger.debug(f"ChromeDriver path denendi ama başarısız: {driver_path}, {e}")
+                            continue
+                
+                # Eğer explicit path bulunamadıysa, Service() boş çağrılabilir
+                if service is None:
+                    logger.info("ChromeDriver explicit path bulunamadı, Service() boş çağrılıyor")
+                    service = Service()
+            else:
+                # Local ortamda ChromeDriverManager dene
+                try:
+                    service = Service(ChromeDriverManager().install())
+                    logger.debug("Local: ChromeDriverManager ile driver bulundu")
+                except Exception as e:
+                    logger.debug(f"ChromeDriverManager başarısız, sistem servisi kullanılıyor: {e}")
+                    service = Service()
+            
+            logger.info(f"Selenium driver oluşturuluyor... (Streamlit Cloud: {is_streamlit_cloud})")
             driver = webdriver.Chrome(
-                service=Service(ChromeDriverManager().install()), 
+                service=service, 
                 options=chrome_options
             )
             
@@ -75,8 +154,26 @@ def get_selenium_driver():
             
             _selenium_driver_pool = driver
             logger.info("✅ Selenium WebDriver oluşturuldu")
+            
+            # Streamlit Cloud'ta başarı mesajını Streamlit'e de göster
+            if is_streamlit_cloud:
+                try:
+                    import streamlit as st
+                    st.success("✅ Selenium WebDriver başarıyla başlatıldı!")
+                except:
+                    pass
+                    
         except Exception as e:
-            logger.warning(f"⚠️  Selenium WebDriver oluşturulamadı: {e}")
+            error_msg = f"⚠️  Selenium WebDriver oluşturulamadı: {e}"
+            logger.warning(error_msg)
+            
+            # Streamlit Cloud'ta hata mesajını Streamlit'e de göster
+            try:
+                import streamlit as st
+                st.error(f"Selenium hatası: {str(e)}")
+            except:
+                pass
+            
             return None
     
     return _selenium_driver_pool
@@ -468,7 +565,15 @@ async def extract_price_from_hepsiburada(url: str, max_retries: int = 0) -> Dict
                 """Selenium ile fiyat çeken sync fonksiyon"""
                 driver = get_selenium_driver()
                 if not driver:
-                    return None, "Selenium driver oluşturulamadı"
+                    error_msg = "Selenium driver oluşturulamadı, geçiliyor..."
+                    logger.warning(f"Hepsiburada: {error_msg}")
+                    # Streamlit Cloud'ta kullanıcıya bilgi ver
+                    try:
+                        import streamlit as st
+                        st.warning("⚠️ Selenium WebDriver başlatılamadı. Hepsiburada fiyatları çekilemiyor. Lütfen Streamlit Cloud loglarını kontrol edin.")
+                    except:
+                        pass
+                    return None, error_msg
                 
                 try:
                     import time
