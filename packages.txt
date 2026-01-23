@@ -1,0 +1,4 @@
+google-chrome-stable
+libnss3
+libgbm-dev
+libasound2
