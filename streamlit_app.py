@@ -79,7 +79,7 @@ if uploaded_file is not None:
         
         # İlk birkaç satırı göster
         with st.expander("📋 Excel Dosyası Önizleme (İlk 5 satır)"):
-            st.dataframe(df.head(), use_container_width=True)
+            st.dataframe(df.head(), width='stretch')
         
         # Başlat butonu
         if st.button("🚀 İşlemi Başlat", type="primary", use_container_width=True):
@@ -91,6 +91,56 @@ if uploaded_file is not None:
                 # Settings kontrolü
                 if settings is None:
                     st.error("⚠️ **API Key'leri Yapılandırılmamış!**")
+                    
+                    # Debug: Secrets'ın yüklenip yüklenmediğini kontrol et
+                    with st.expander("🔍 Debug Bilgisi - Secrets Kontrolü", expanded=True):
+                        try:
+                            if hasattr(st, 'secrets') and st.secrets:
+                                st.success("✅ Streamlit secrets mevcut")
+                                
+                                # Secrets içeriğini göster
+                                try:
+                                    secrets_dict = {}
+                                    # Dict-style erişim
+                                    for key in ["GOOGLE_API_KEY", "GOOGLE_CSE_ID", "GOOGLE_GEMINI_API_KEY"]:
+                                        try:
+                                            if key in st.secrets:
+                                                val = st.secrets[key]
+                                                # İlk 10 karakteri göster, geri kalanını gizle
+                                                if val and len(str(val)) > 10:
+                                                    secrets_dict[key] = str(val)[:10] + "..." + " (gizli)"
+                                                else:
+                                                    secrets_dict[key] = str(val) if val else "❌ YOK"
+                                            else:
+                                                secrets_dict[key] = "❌ YOK"
+                                        except:
+                                            # Attribute-style erişim
+                                            try:
+                                                val = getattr(st.secrets, key, None)
+                                                if val and len(str(val)) > 10:
+                                                    secrets_dict[key] = str(val)[:10] + "..." + " (gizli)"
+                                                else:
+                                                    secrets_dict[key] = str(val) if val else "❌ YOK"
+                                            except:
+                                                secrets_dict[key] = "❌ YOK"
+                                    
+                                    st.json(secrets_dict)
+                                    
+                                    # Kontrol
+                                    if secrets_dict.get("GOOGLE_API_KEY", "").startswith("❌"):
+                                        st.error("❌ GOOGLE_API_KEY bulunamadı!")
+                                    if secrets_dict.get("GOOGLE_CSE_ID", "").startswith("❌"):
+                                        st.error("❌ GOOGLE_CSE_ID bulunamadı!")
+                                        
+                                except Exception as e:
+                                    st.error(f"Secrets okunurken hata: {e}")
+                                    st.exception(e)
+                            else:
+                                st.warning("❌ Streamlit secrets bulunamadı veya boş.")
+                                st.info("Lütfen Streamlit Cloud'da Settings > Secrets bölümünden secrets ekleyin.")
+                        except Exception as e:
+                            st.error(f"Debug kontrolü sırasında hata: {e}")
+                    
                     st.markdown("""
                     ### Streamlit Cloud Secrets Yapılandırması Gerekli
                     
@@ -101,6 +151,11 @@ if uploaded_file is not None:
                     GOOGLE_CSE_ID = "your_custom_search_engine_id_here"
                     GOOGLE_GEMINI_API_KEY = "your_gemini_api_key_here"  # Opsiyonel
                     ```
+                    
+                    **Önemli:** 
+                    - Değerler **tırnak içinde** olmalı (`"..."`)
+                    - Eşittir işaretinin **her iki tarafında boşluk** olmalı (`KEY = "value"`)
+                    - Secrets'ı ekledikten sonra uygulamayı **yeniden başlatın** (restart)
                     
                     Daha fazla bilgi için README.md dosyasına bakın.
                     """)
@@ -152,7 +207,7 @@ if uploaded_file is not None:
                 # Sonuçları DataFrame olarak göster
                 if results:
                     results_df = pd.DataFrame(results)
-                    st.dataframe(results_df, use_container_width=True)
+                    st.dataframe(results_df, width='stretch')
                     
                     # İndirme butonu
                     with open(output_file, 'rb') as f:
