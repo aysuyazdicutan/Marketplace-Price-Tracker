@@ -14,6 +14,18 @@ from config import Settings
 import streamlit as st
 import config, streamlit as st
 
+import shutil
+import streamlit as st
+
+st.write("### 🛠️ Sistem Bağımlılık Kontrolü")
+check_packages = ["chromium", "chromedriver"]
+
+for pkg in check_packages:
+    path = shutil.which(pkg)
+    if path:
+        st.success(f"✅ {pkg} bulundu: {path}")
+    else:
+        st.error(f"❌ {pkg} SİSTEMDE BULUNAMADI!")
 # ⚡ KRİTİK: UI'ı hemen render et (health check için)
 st.set_page_config(
     page_title="Fiyat Karşılaştırma Aracı",
