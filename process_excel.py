@@ -50,6 +50,7 @@ def get_selenium_driver():
     if _selenium_driver_pool is None and USE_SELENIUM:
         try:
             chrome_options = Options()
+            chrome_options.binary_location = "/usr/bin/chromium"  # Linux ortamında Chromium binary yolu
             chrome_options.add_argument("--headless")  # Arka planda çalış
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-dev-shm-usage")
