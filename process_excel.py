@@ -11,6 +11,7 @@ from typing import List, Dict, Tuple, Optional
 import os
 import json
 import re
+import random
 from urllib.parse import quote, urlparse, parse_qs, unquote
 from bs4 import BeautifulSoup
 from difflib import SequenceMatcher
@@ -1064,14 +1065,20 @@ def extract_price(price_text: str):
     return None
 
 
-async def extract_price_from_teknosa(url: str, max_retries: int = 2) -> Dict[str, any]:
+async def extract_price_from_teknosa(url: str, max_retries: int = 3, proxy: Optional[str] = None) -> Dict[str, any]:
     """
     Teknosa URL'inden fiyat bilgisini çeker. Retry mekanizması ile.
     Öncelik sırası:
       1) HTML price selector'ları
       2) JSON-LD / script içi json
       3) JavaScript pattern'leri
+    
+    Args:
+        url: Teknosa ürün URL'i
+        max_retries: Maksimum deneme sayısı (varsayılan: 3)
+        proxy: Proxy URL'i (opsiyonel, format: "http://user:pass@host:port" veya "http://host:port")
     """
+    # Headers sadece cloudscraper için kullanılacak, curl_cffi impersonate kullanacak
     headers = {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
@@ -1087,13 +1094,14 @@ async def extract_price_from_teknosa(url: str, max_retries: int = 2) -> Dict[str
         'Referer': 'https://www.teknosa.com/',
     }
     
+    # Streamlit Cloud IP engellemesini aşmak için daha agresif ayarlar
     for attempt in range(max_retries + 1):
         try:
-            # Rate limiting için bekleme
+            # Her denemede farklı bir süre bekle (1-4 saniye arası)
             if attempt > 0:
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(random.uniform(1.0, 4.0))
             else:
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(random.uniform(0.3, 1.0))
             
             timeout_duration = 25.0 if attempt == max_retries else 15.0
             
@@ -1104,15 +1112,26 @@ async def extract_price_from_teknosa(url: str, max_retries: int = 2) -> Dict[str
                 
                 if USE_CURL_CFFI and curl_requests is not None:
                     # curl_cffi ile browser fingerprint simülasyonu
+                    # ÖNEMLİ: Headers'ı curl_cffi'nin kendisine bırakıyoruz (impersonate="chrome110")
+                    # Manuel header eklemek bazen parmak izi uyuşmazlığına (403) sebep olur.
                     try:
+                        # Proxy desteği için altyapı hazırla
+                        request_kwargs = {
+                            'url': url,
+                            'timeout': int(timeout_duration),
+                            'impersonate': 'chrome110'  # Güncel bir browser taklidi
+                        }
+                        
+                        # Proxy varsa ekle
+                        if proxy:
+                            request_kwargs['proxies'] = {
+                                'http': proxy,
+                                'https': proxy
+                            }
+                        
                         response = await loop.run_in_executor(
                             None,
-                            lambda: curl_requests.get(
-                                url, 
-                                headers=headers, 
-                                timeout=int(timeout_duration),
-                                impersonate="chrome110"
-                            )
+                            lambda: curl_requests.get(**request_kwargs)
                         )
                     except Exception as e:
                         logger.warning(f"curl_cffi hatası: {str(e)[:50]}")
@@ -1128,9 +1147,17 @@ async def extract_price_from_teknosa(url: str, max_retries: int = 2) -> Dict[str
                 elif USE_CLOUDSCRAPER and cloudscraper is not None:
                     # cloudscraper ile Cloudflare bypass
                     try:
-                        scraper = cloudscraper.create_scraper(
-                            browser={'browser': 'chrome', 'platform': 'darwin', 'desktop': True}
-                        )
+                        scraper_kwargs = {
+                            'browser': {'browser': 'chrome', 'platform': 'darwin', 'desktop': True}
+                        }
+                        # Proxy desteği
+                        if proxy:
+                            scraper_kwargs['proxies'] = {
+                                'http': proxy,
+                                'https': proxy
+                            }
+                        
+                        scraper = cloudscraper.create_scraper(**scraper_kwargs)
                         response = await loop.run_in_executor(
                             None,
                             lambda: scraper.get(url, headers=headers, timeout=int(timeout_duration))
@@ -1151,8 +1178,9 @@ async def extract_price_from_teknosa(url: str, max_retries: int = 2) -> Dict[str
                 if hasattr(response, 'status_code'):
                     if response.status_code == 403:
                         if attempt < max_retries:
-                            logger.warning(f"403 hatası (deneme {attempt + 1}/{max_retries + 1}), tekrar denenecek...")
-                            await asyncio.sleep(2.0)
+                            logger.warning(f"Teknosa hala 403 veriyor (Deneme {attempt+1}/{max_retries + 1})")
+                            # 403 hatası için daha uzun rastgele bekleme
+                            await asyncio.sleep(random.uniform(2.0, 5.0))
                             continue
                         else:
                             return {
