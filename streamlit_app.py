@@ -177,32 +177,49 @@ if uploaded_file is not None:
             else:
                 st.info(f"🔄 {marketplace_value} için işlem başlatılıyor...")
             
-            # Progress bar
+            # Progress bar ve durum gösterimi
             progress_bar = st.progress(0)
             status_text = st.empty()
+            product_info = st.empty()
+            
+            # Toplam ürün sayısını öğrenmek için önce dosyayı oku
+            try:
+                preview_df = pd.read_excel(tmp_path, engine='openpyxl')
+                total_products = len(preview_df)
+            except:
+                total_products = 0
+            
+            # Progress callback fonksiyonu
+            def update_progress(current, total, product_name):
+                """Her ürün işlendiğinde progress bar'ı güncelle"""
+                progress = current / total if total > 0 else 0
+                progress_bar.progress(progress)
+                status_text.text(f"⏳ İşleniyor: {current}/{total} ürün tamamlandı")
+                product_info.text(f"📦 Şu an işlenen: {product_name[:50]}...")
             
             try:
                 # Async fonksiyonu çalıştır
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 
-                status_text.text("⏳ İşlem devam ediyor... Lütfen bekleyin.")
-                progress_bar.progress(20)
+                status_text.text("⏳ İşlem başlatılıyor...")
+                progress_bar.progress(0)
                 
-                # Excel dosyasını işle (stop_flag olmadan - None geç)
+                # Excel dosyasını işle (progress_callback ile)
                 results = loop.run_until_complete(
-                    process_excel_file(tmp_path, marketplace_value, None)
+                    process_excel_file(tmp_path, marketplace_value, None, update_progress)
                 )
                 
-                progress_bar.progress(80)
+                progress_bar.progress(0.9)
                 status_text.text("💾 Sonuçlar kaydediliyor...")
+                product_info.empty()
                 
                 # Sonuçları kaydet
                 output_file = "results.xlsx"
                 save_results_to_excel(results, output_file)
                 
-                progress_bar.progress(100)
-                status_text.text("✅ İşlem tamamlandı!")
+                progress_bar.progress(1.0)
+                status_text.text(f"✅ İşlem tamamlandı! {len(results)} ürün işlendi.")
                 
                 # Sonuçları göster
                 st.success(f"✅ {len(results)} ürün işlendi!")

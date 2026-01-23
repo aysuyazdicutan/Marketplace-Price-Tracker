@@ -3675,7 +3675,7 @@ def is_price_valid(found_price: float, mm_price: float = None) -> bool:
     return is_valid
 
 
-async def process_excel_file(excel_file: str, selected_marketplace: str = None, stop_flag: asyncio.Event = None):
+async def process_excel_file(excel_file: str, selected_marketplace: str = None, stop_flag: asyncio.Event = None, progress_callback=None):
     """
     Excel dosyasındaki tüm ürünleri işler ve belirtilen marketplace için arama yapar.
     Eğer selected_marketplace None ise, tüm marketplace'ler için çalışır.
@@ -3684,6 +3684,7 @@ async def process_excel_file(excel_file: str, selected_marketplace: str = None, 
         excel_file: Excel dosya yolu
         selected_marketplace: Çalıştırılacak marketplace (None, "Teknosa", "Hepsiburada", "Trendyol", "Amazon")
         stop_flag: İşlemi durdurmak için kullanılan asyncio.Event (opsiyonel)
+        progress_callback: Her ürün işlendiğinde çağrılacak callback fonksiyonu (current, total, product_name)
     
     Returns:
         Sonuçlar listesi (her ürün için bir dict: product_name, mm_price, teknosa_fiyatı, hepsiburada_fiyatı, trendyol_fiyatı, amazon_fiyatı, fiyat_karşılaştırması)
@@ -3851,6 +3852,13 @@ async def process_excel_file(excel_file: str, selected_marketplace: str = None, 
         
         # Ürün sonucunu ekle
         all_results.append(product_result)
+        
+        # Progress callback çağır
+        if progress_callback:
+            try:
+                progress_callback(product_idx, len(products_data), product_name)
+            except Exception as e:
+                logger.debug(f"Progress callback hatası: {e}")
         
         # Stop flag kontrolü
         if stop_flag and stop_flag.is_set():
