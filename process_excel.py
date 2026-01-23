@@ -107,18 +107,38 @@ def get_selenium_driver():
             # Service ayarları - Streamlit Cloud için özel path'ler dene
             service = None
             if is_streamlit_cloud or system == "Linux":
-                # Streamlit Cloud'ta ChromeDriver path'leri
+                # Streamlit Cloud'ta ChromeDriver path'leri (daha kapsamlı liste)
                 chromedriver_paths = [
                     "/usr/bin/chromedriver",
+                    "/usr/bin/chromium-driver",
                     "/usr/lib/chromium-browser/chromedriver",
+                    "/usr/lib/chromium/chromedriver",
                     "/usr/local/bin/chromedriver",
+                    "/snap/bin/chromium.chromedriver",
                 ]
                 
+                # Önce PATH'te chromedriver var mı kontrol et
+                import shutil
+                chromedriver_in_path = shutil.which("chromedriver")
+                if chromedriver_in_path:
+                    chromedriver_paths.insert(0, chromedriver_in_path)
+                    logger.info(f"ChromeDriver PATH'te bulundu: {chromedriver_in_path}")
+                
                 for driver_path in chromedriver_paths:
-                    if os.path.exists(driver_path):
+                    if driver_path and os.path.exists(driver_path):
+                        # Executable kontrolü
+                        if not os.access(driver_path, os.X_OK):
+                            logger.warning(f"ChromeDriver bulundu ama executable değil: {driver_path}")
+                            try:
+                                os.chmod(driver_path, 0o755)
+                                logger.info(f"ChromeDriver executable yapıldı: {driver_path}")
+                            except Exception as e:
+                                logger.warning(f"ChromeDriver executable yapılamadı: {e}")
+                                continue
+                        
                         try:
                             service = Service(driver_path)
-                            logger.info(f"Streamlit Cloud: ChromeDriver bulundu: {driver_path}")
+                            logger.info(f"✅ Streamlit Cloud: ChromeDriver bulundu ve kullanılıyor: {driver_path}")
                             break
                         except Exception as e:
                             logger.debug(f"ChromeDriver path denendi ama başarısız: {driver_path}, {e}")
@@ -126,7 +146,10 @@ def get_selenium_driver():
                 
                 # Eğer explicit path bulunamadıysa, Service() boş çağrılabilir
                 if service is None:
-                    logger.info("ChromeDriver explicit path bulunamadı, Service() boş çağrılıyor")
+                    logger.warning("⚠️ ChromeDriver explicit path bulunamadı, Service() boş çağrılıyor (PATH'ten bulunacak)")
+                    # PATH'te chromedriver var mı tekrar kontrol et
+                    if chromedriver_in_path:
+                        logger.info(f"PATH'te chromedriver var, kullanılacak: {chromedriver_in_path}")
                     service = Service()
             else:
                 # Local ortamda ChromeDriverManager dene
@@ -580,20 +603,38 @@ async def extract_price_from_hepsiburada(url: str, max_retries: int = 0) -> Dict
                     import random
                     from urllib.parse import quote
                     
-                    # Timeout'u çok azalt (5 saniye - ilk denemede başarısız olursa hemen geçsin)
-                    wait = WebDriverWait(driver, 5)
+                    # Streamlit Cloud algılama - timeout sürelerini ayarla
+                    is_streamlit = False
+                    try:
+                        import streamlit as st
+                        is_streamlit = True
+                    except:
+                        pass
                     
-                    # Sayfaya git
+                    # Streamlit Cloud'ta daha uzun timeout (45 saniye), local'de 20 saniye
+                    wait_timeout = 45 if is_streamlit else 20
+                    wait = WebDriverWait(driver, wait_timeout)
+                    
+                    logger.info(f"Hepsiburada: Sayfa yükleniyor (timeout: {wait_timeout}s)...")
+                    
+                    # Sayfaya git - Streamlit Cloud'ta daha uzun page load timeout
+                    page_load_timeout = 60 if is_streamlit else 30
+                    driver.set_page_load_timeout(page_load_timeout)
+                    driver.implicitly_wait(5)  # Implicit wait ekle
                     driver.get(url)
                     
-                    # Sayfanın yüklenmesini bekle (timeout çok kısa - hızlı geçiş için)
+                    # Sayfanın yüklenmesini bekle
                     try:
                         wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                    except:
-                        # Timeout olursa hemen geç
-                        return None, "Sayfa yüklenemedi (timeout)"
+                        logger.debug("Hepsiburada: Sayfa body elementi yüklendi")
+                    except Exception as e:
+                        logger.warning(f"Hepsiburada: Sayfa body elementi yüklenemedi: {e}")
+                        return None, f"Sayfa yüklenemedi (timeout: {wait_timeout}s)"
                     
-                    time.sleep(1)  # Bekleme süresini çok azalt (1 saniye)
+                    # Streamlit Cloud'ta daha uzun bekleme (JavaScript yüklenmesi için)
+                    sleep_time = 3 if is_streamlit else 2
+                    time.sleep(sleep_time)
+                    logger.debug(f"Hepsiburada: İlk bekleme tamamlandı ({sleep_time}s)")
                     
                     # Popup'ları kapat
                     try:
@@ -616,9 +657,12 @@ async def extract_price_from_hepsiburada(url: str, max_retries: int = 0) -> Dict
                     except:
                         pass
                     
-                    time.sleep(0.5)  # Beklemeyi azalt
+                    # Scroll ve ek bekleme
+                    scroll_wait = 1 if is_streamlit else 0.5
+                    time.sleep(scroll_wait)
                     driver.execute_script("window.scrollTo(0, 300);")
-                    time.sleep(0.5)  # Beklemeyi azalt
+                    time.sleep(scroll_wait)
+                    logger.debug("Hepsiburada: Scroll yapıldı, fiyat aranıyor...")
                     
                     # Fiyat geçerliliği kontrolü (kullanıcının kodundan)
                     def fiyat_gecerli_mi(text):
@@ -752,10 +796,31 @@ async def extract_price_from_hepsiburada(url: str, max_retries: int = 0) -> Dict
                     return None, "Fiyat bulunamadı"
                     
                 except Exception as e:
-                    return None, f"Hata: {str(e)[:50]}"
+                    error_msg = str(e)
+                    # Timeout hatalarını özel olarak yakala
+                    if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                        logger.warning(f"Hepsiburada: Timeout hatası: {error_msg[:100]}")
+                        return None, f"Sayfa yükleme timeout ({wait_timeout}s)"
+                    logger.warning(f"Hepsiburada: Selenium hatası: {error_msg[:100]}")
+                    return None, f"Hata: {error_msg[:50]}"
             
-            # Selenium'u async executor'da çalıştır
-            price, error = await loop.run_in_executor(None, selenium_extract)
+            # Selenium'u async executor'da çalıştır - Streamlit Cloud'ta daha uzun timeout
+            is_streamlit_env = False
+            try:
+                import streamlit as st
+                is_streamlit_env = True
+            except:
+                pass
+            
+            executor_timeout = 90 if is_streamlit_env else 40  # Streamlit Cloud'ta 90 saniye
+            try:
+                price, error = await asyncio.wait_for(
+                    loop.run_in_executor(None, selenium_extract),
+                    timeout=executor_timeout
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"Hepsiburada: Executor timeout ({executor_timeout}s), geçiliyor...")
+                price, error = None, f"Executor timeout ({executor_timeout}s)"
             
             if price:
                 logger.debug(f"Hepsiburada: Selenium ile fiyat bulundu: {price}")
@@ -1201,12 +1266,24 @@ async def extract_price_from_teknosa(url: str, max_retries: int = 3, proxy: Opti
     }
     
     # Streamlit IP engellemesini aşmak için daha uzun bekleme
+    # 403 hatası alındığında retry sayısını azalt (maksimum 2 deneme)
+    max_403_retries = min(max_retries, 1)  # 403 hatasında maksimum 1 retry
     for attempt in range(max_retries + 1):
         try:
             if attempt > 0:
                 wait_time = random.uniform(5.0, 10.0)  # Süreyi artırdık
                 logger.warning(f"Teknosa 403 verdi, {wait_time:.1f} sn bekleniyor (Deneme {attempt+1})")
                 await asyncio.sleep(wait_time)
+                
+                # 403 hatası alındıysa ve retry limitine ulaşıldıysa vazgeç
+                if attempt > max_403_retries:
+                    logger.warning(f"Teknosa: 403 hatası devam ediyor, maksimum retry sayısına ulaşıldı ({max_403_retries+1} deneme), vazgeçiliyor...")
+                    return {
+                        'price': None,
+                        'currency': None,
+                        'success': False,
+                        'error': '403 Forbidden - Too many retries'
+                    }
             
             timeout_duration = 25.0 if attempt == max_retries else 15.0
             
@@ -1281,6 +1358,15 @@ async def extract_price_from_teknosa(url: str, max_retries: int = 3, proxy: Opti
                 # Response'u kontrol et
                 if hasattr(response, 'status_code'):
                     if response.status_code == 403:
+                        # 403 hatası alındığında maksimum 1 retry yap
+                        if attempt >= max_403_retries:
+                            logger.warning(f"Teknosa: 403 hatası devam ediyor, maksimum retry sayısına ulaşıldı ({max_403_retries+1} deneme), vazgeçiliyor...")
+                            return {
+                                'price': None,
+                                'currency': None,
+                                'success': False,
+                                'error': '403 Forbidden - Too many retries'
+                            }
                         # 403 hatası alındığında rastgele bekleme (5.0-10.0 saniye)
                         wait_time = random.uniform(5.0, 10.0)
                         logger.warning(f"Teknosa 403 verdi, {wait_time:.1f} sn bekleniyor (Deneme {attempt+1})")
