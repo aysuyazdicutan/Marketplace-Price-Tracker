@@ -25,6 +25,7 @@ try:
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
+    from webdriver_manager.chrome import ChromeDriverManager
     USE_SELENIUM = True
 except ImportError:
     USE_SELENIUM = False
@@ -49,14 +50,61 @@ def get_selenium_driver():
     if _selenium_driver_pool is None and USE_SELENIUM:
         try:
             chrome_options = Options()
-            chrome_options.add_argument("--headless")  # Bulut ortamı için şart
+            
+            # Platforma göre Chrome binary path'ini ayarla
+            # Streamlit Cloud (Linux) ve local (macOS/Windows) için uyumlu
+            import platform
+            system = platform.system()
+            
+            chrome_binary = None
+            
+            if system == "Darwin":  # macOS (local)
+                # macOS'ta Chrome genellikle bu yolda
+                chrome_paths = [
+                    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+                ]
+                for path in chrome_paths:
+                    if os.path.exists(path):
+                        chrome_binary = path
+                        logger.debug(f"macOS: Chrome binary bulundu: {chrome_binary}")
+                        break
+            elif system == "Linux":  # Streamlit Cloud veya Linux
+                # Linux'ta (Streamlit Cloud) Chromium genellikle bu yolda olabilir
+                # Ama önce kontrol et, yoksa belirtme (Selenium PATH'ten bulur)
+                chrome_paths = [
+                    "/usr/bin/chromium",
+                    "/usr/bin/chromium-browser",
+                    "/usr/bin/google-chrome",
+                    "/usr/bin/chrome",
+                ]
+                for path in chrome_paths:
+                    if os.path.exists(path):
+                        chrome_binary = path
+                        logger.debug(f"Linux: Chrome binary bulundu: {chrome_binary}")
+                        break
+                # Eğer hiçbiri bulunamazsa, binary_location belirtme
+                # Streamlit Cloud'da genellikle PATH'te olur
+                if not chrome_binary:
+                    logger.debug("Linux: Chrome binary belirtilmedi, sistem PATH'inden bulunacak")
+            # Windows için binary_location belirtmeye gerek yok, Selenium otomatik bulur
+            
+            # Binary bulunduysa ayarla
+            if chrome_binary:
+                chrome_options.binary_location = chrome_binary
+            
+            chrome_options.add_argument("--headless")  # Arka planda çalış
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-dev-shm-usage")
-            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
+            chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             
-            # Sürücüyü sistem yolundan (packages.txt ile kurulan) al
-            service = Service() 
-            driver = webdriver.Chrome(service=service, options=chrome_options)
+            driver = webdriver.Chrome(
+                service=Service(ChromeDriverManager().install()), 
+                options=chrome_options
+            )
             
             # WebDriver özelliğini gizle
             driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
