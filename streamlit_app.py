@@ -9,6 +9,11 @@ import tempfile
 from pathlib import Path
 import pandas as pd
 
+import config
+from config import Settings
+import streamlit as st
+import config, streamlit as st
+
 # ⚡ KRİTİK: UI'ı hemen render et (health check için)
 st.set_page_config(
     page_title="Fiyat Karşılaştırma Aracı",

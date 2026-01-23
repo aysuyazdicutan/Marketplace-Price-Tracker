@@ -4,7 +4,7 @@ A production-ready tool that searches for products on marketplaces and extracts 
 
 ## 🎯 Goal
 
-Given a product name and marketplace name (e.g., "Canon Powershot G7X Mark III" + "Trendyol"), the system:
+Given a product name and marketplace name (e.g., "Canon Powershot G7X" + "Trendyol"), the system:
 1. Searches Google using the official Google Custom Search API to find product links (NO scraping for search)
 2. Retrieves search results as JSON
 3. Extracts price information from marketplace pages using:

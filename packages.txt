@@ -1,4 +1,6 @@
-google-chrome-stable
+chromium
 libnss3
 libgbm-dev
 libasound2
+libcurl4-openssl-dev
+libssl-dev
